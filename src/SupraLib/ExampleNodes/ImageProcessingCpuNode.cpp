@@ -72,26 +72,23 @@ namespace supra
 
 	template <typename InputType, typename OutputType>
 	std::shared_ptr<ContainerBase> ImageProcessingCpuNode::processTemplated(std::shared_ptr<const Container<InputType> > imageData, vec3s size)
-	{
-		// here the actual processing happens!
+            {
+                    // here the actual processing happens!
 
-		size_t width = size.x;
-		size_t height = size.y;
-		size_t depth = size.z;
+                    size_t width = size.x;
+                    size_t height = size.y;
+                    size_t depth = size.z;
 
-		// make sure the data is in cpu memory
-		auto inImageData = imageData;
-		if (!inImageData->isHost() && !inImageData->isBoth())
-		{
-			inImageData = make_shared<Container<InputType> >(LocationHost, *inImageData);
-		}
-		// Get pointer to the actual memory block
-		const InputType* pInputImage = inImageData->get();
+                    // make sure the data is in cpu memory
+                    auto inImageData = imageData;
+                    if (!inImageData->isHost() && !inImageData->isBoth())
+                    {
+                            inImageData = make_shared<Container<InputType> >(LocationHost, *inImageData);
+                    }
+                    // Get pointer to the actual memory block
+                    const InputType* pInputImage = inImageData->get();
 
-		// prepare the output memory
-		auto outImageData = make_shared<Container<OutputType> >(LocationHost, inImageData->getStream(), width*height*depth);
-		// Get pointer to the actual memory block
-		OutputType* pOutputImage = outImageData->get();
+
                 // Deserialize the ScriptModule from a file using torch::jit::load().
                     std::shared_ptr<torch::jit::script::Module> module = torch::jit::load("model.pt");
                     assert(module != nullptr);
@@ -122,6 +119,10 @@ namespace supra
                     int y=f.size(1);//2077
                     int z=f.size(2);//256
                     int w=f.size(3);//64
+                    // prepare the output memory
+                    auto outImageData = make_shared<Container<OutputType> >(LocationHost, inImageData->getStream(), z*1600*x);
+                    // Get pointer to the actual memory block
+                    OutputType* pOutputImage = outImageData->get();
                     //if GPU is used, then the following has to be done
                     auto a1=torch::empty({y,z,w});
                     auto a2=torch::empty({z,w});
@@ -144,38 +145,34 @@ namespace supra
                         inputs.emplace_back(a5);
                         // Execute the model and turn its output into a tensor.
                         at::Tensor output = module->forward(inputs).toTensor();
-                        //
-                        std::cout << output.slice(/*dim=*/1, /*start=*/0, /*end=*/5) << '\n';
+                        output =at::squeeze(output);
+                        float value;
+                        for (int y = 0; y < output.size(1); y++)
+                        {
+                                for (int x = 0; x < output.size(0); x++)
+                                {
+                                        // Perform a pixel-wise operation on the image
+                                        value = output[x][y];
+                                        // Get the input pixel value and cast it to out working type.
+                                        // As this should in general be a type with wider range / precision, this cast does not loose anything.
+
+                                        // Perform operation, in this case multiplication
+                                        // Store the output pixel value..
+                                            // This should u in a sane way, that is with clamping. There is a helper for that!
+                                        pOutputImage[x + y*output.size(0) + i *output.size(0)*output.size(1)] = clampCast<OutputType>(value);
+                                        // Because this is templated, we need to cast from "WorkType" to "OutputType".
+                                }
+                        }
                     }
 
 
 
-		// process the image
-		for (size_t z = 0; z < depth; z++)
-		{
-			for (size_t y = 0; y < height; y++)
-			{
-				for (size_t x = 0; x < width; x++)
-				{
-					// Perform a pixel-wise operation on the image
 
-					// Get the input pixel value and cast it to out working type.
-					// As this should in general be a type with wider range / precision, this cast does not loose anything.
-					ImageProcessingCpuNode::WorkType inPixel = pInputImage[x + y*width + z *width*height];
 
-					// Perform operation, in this case multiplication
-					WorkType value = inPixel * static_cast<WorkType>(m_factor);
 
-					// Store the output pixel value.
-					// Because this is templated, we need to cast from "WorkType" to "OutputType".
-					// This should happen in a sane way, that is with clamping. There is a helper for that!
-					pOutputImage[x + y*width + z *width*height] = clampCast<OutputType>(value);
-				}
-			}
-		}
 
 		// return the result!
-		return outImageData;
+                return outImageData;
 	}
 
 	template <typename InputType>
