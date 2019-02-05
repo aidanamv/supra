@@ -19,6 +19,10 @@ IF(WIN32)
     SET(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} /MP")
 ENDIF(WIN32)
 
+find_package(Torch REQUIRED)
+set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} ${TORCH_CXX_FLAGS}")
+
+
 # options for modules to include
 OPTION(SUPRA_PROFILING             "Add profiling message to logfile"  OFF)
 OPTION(SUPRA_WARNINGS_AS_ERRORS    "Treat all build warnings as errors (NOT on windows)" OFF)

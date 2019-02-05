@@ -13,6 +13,12 @@
 
 #include "USImage.h"
 #include <utilities/Logging.h>
+#include <torch/script.h>
+#include <iostream>
+#include <iomanip>
+#include <fstream>
+#include <vector>
+#include <memory>
 
 using namespace std;
 
@@ -86,6 +92,63 @@ namespace supra
 		auto outImageData = make_shared<Container<OutputType> >(LocationHost, inImageData->getStream(), width*height*depth);
 		// Get pointer to the actual memory block
 		OutputType* pOutputImage = outImageData->get();
+                // Deserialize the ScriptModule from a file using torch::jit::load().
+                    std::shared_ptr<torch::jit::script::Module> module = torch::jit::load("model.pt");
+                    assert(module != nullptr);
+                    cout << "Model loaded.\n";
+
+                    // Create a vector of inputs.
+                    std::vector<torch::jit::IValue> inputs;
+                    // reading raw data and saving as a vector
+                    std::ifstream fin("rawData_1.raw", std::ios::binary);
+                    if(!fin)
+                    {
+                        std::cout << " Error, Couldn't find the file" << "\n";
+                        return 0;
+                    }
+                    fin.seekg(0, std::ios::end);
+                    const size_t num_elements = fin.tellg() / sizeof(signed short);
+                    fin.seekg(0, std::ios::beg );
+                    vector<signed short > inData(num_elements);
+                    fin.read(reinterpret_cast<char*>(&inData[0]), num_elements*sizeof(signed short));
+                    //converting input data from vector to torch tensor (remember not at:tensor,but torch::tensor)
+                    //auto f = torch::from_blob(a, {17, 64, 128, 2077}).cuda();
+                    at::TensorOptions options(at::ScalarType::Byte);
+                    auto f = torch::from_blob(inData.data(), {64, 2077, 256,34},options);
+                    f = f.toType(torch::kInt16);
+                    f=f.permute({3,1,2,0});//now it is the matrix of {34,2077,256,64}
+                    //int x=f.size(0);
+                    int x=1;//in order to run only one frame
+                    int y=f.size(1);//2077
+                    int z=f.size(2);//256
+                    int w=f.size(3);//64
+                    //if GPU is used, then the following has to be done
+                    auto a1=torch::empty({y,z,w});
+                    auto a2=torch::empty({z,w});
+                    auto a3=torch::empty({1600,z,w});
+                    auto a4=torch::empty({w,z,1600});
+                    auto a5=torch::empty({1,w,z,1600});
+                    for (int64_t i = 0; i < x; i++) {
+                        a1 = f[i];//{2077,256,64}
+                        for (int64_t j = 0; j < 1600; j++) {
+                            a2 = a1[j];
+                            a3[j] = a2;//{1600,256,64}
+
+                        }
+                        //cudaFree(tensor.storage()->data()); // clearing gpu memory
+                        //normalization step
+                        a4 = a3.permute({2, 1, 0});//{64,256,1600}
+                        a4 = (a4 + 2047) / (2 * 2047);
+                        a5 = torch::unsqueeze(a4, 0);
+                        cout<<a5.sizes()<<endl;
+                        inputs.emplace_back(a5);
+                        // Execute the model and turn its output into a tensor.
+                        at::Tensor output = module->forward(inputs).toTensor();
+                        //
+                        std::cout << output.slice(/*dim=*/1, /*start=*/0, /*end=*/5) << '\n';
+                    }
+
+
 
 		// process the image
 		for (size_t z = 0; z < depth; z++)
