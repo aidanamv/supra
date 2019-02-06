@@ -146,13 +146,23 @@ namespace supra
                         // Execute the model and turn its output into a tensor.
                         at::Tensor output = module->forward(inputs).toTensor();
                         output =at::squeeze(output);
-                        float value;
+                        //Efficient access to tensor elements from (https://devhub.io/repos/soumith-ATen)
+                        // assert foo is 2-dimensional and holds floats
+                        auto foo_a = output.accessor<float,2>();
+                        float trace = 0;
+                        for(int i = 0; i < foo_a.size(0); i++) {
+                            for(int j = 0; j < foo_a.size(1); j++) {
+                          // use the accessor foo_a to get tensor data.
+                          trace += foo_a[i][i];
+                            }
+                        }
                         for (int y = 0; y < output.size(1); y++)
                         {
                                 for (int x = 0; x < output.size(0); x++)
                                 {
-                                        // Perform a pixel-wise operation on the image
-                                        value = output[x][y];
+                                        // Perform a pixel-wise operatin on the image
+                                        WorkType value = foo_a[x][y];
+
                                         // Get the input pixel value and cast it to out working type.
                                         // As this should in general be a type with wider range / precision, this cast does not loose anything.
 
